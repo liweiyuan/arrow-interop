@@ -18,9 +18,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
+// ... 已有的 import ...
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class ArrowDataSenderService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ArrowDataSenderService.class);
+
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -30,52 +36,82 @@ public class ArrowDataSenderService {
     private static final MediaType ARROW_STREAM = MediaType.get("application/vnd.apache.arrow.stream");
 
 
+    // ... 保持已有的 httpClient 和 ARROW_STREAM 声明 ...
+
     public String sendArrowData(String targetUrl) throws IOException {
-        // In a real app, manage allocator lifecycle carefully.
-        // For simplicity here, using try-with-resources for a one-off send.
         try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            // Define the schema: id (Int32), name (VarChar)
-            Schema schema = new Schema(Arrays.asList(
-                    new Field("id", FieldType.nullable(Types.MinorType.INT.getType()), null),
-                    new Field("name", FieldType.nullable(Types.MinorType.VARCHAR.getType()), null)
-            ));
-            // Create vectors and populate data
-            int rowCount = 5;
-            try (VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator);
-                 IntVector idVector = (IntVector) root.getVector("id");
-                 VarCharVector nameVector = (VarCharVector) root.getVector("name")) {
-                root.setRowCount(rowCount);
-                idVector.allocateNew(rowCount);
-                nameVector.allocateNew(rowCount);
-                for (int i = 0; i < rowCount; i++) {
-                    idVector.set(i, i + 1);
-                    nameVector.set(i, new Text("Name_" + (i + 1)));
-                }
-                idVector.setValueCount(rowCount);
-                nameVector.setValueCount(rowCount);
-                // Serialize to Arrow IPC Stream format
-                try (ArrowStreamWriter writer = new ArrowStreamWriter(root, null, baos)) {
-                    writer.start();
-                    writer.writeBatch();
-                    writer.end();
-                }
-                byte[] arrowDataBytes = baos.toByteArray();
-                // Send using OkHttp
-                RequestBody body = RequestBody.create(arrowDataBytes, ARROW_STREAM);
-                Request request = new Request.Builder()
-                        .url(targetUrl)
-                        .post(body)
-                        .build();
-                try (Response response = httpClient.newCall(request).execute()) {
-                    if (!response.isSuccessful()) {
-                        throw new IOException("Unexpected code " + response);
-                    }
-                    return response.body().string();
-                }
-            } // VectorSchemaRoot, Vectors implicitly released if allocator is closed, but explicit Release() is better in long-running allocators
+
+            Schema schema = createSchema();
+            byte[] arrowDataBytes = generateAndSerializeData(allocator, schema, baos);
+
+            return sendHttpRequest(targetUrl, arrowDataBytes);
+
         } catch (Exception e) {
-            throw new IOException("Failed to send Arrow data", e);
+            logger.error("发送Arrow数据失败 | URL: {}, 错误: {}", targetUrl, e.getMessage(), e);
+            throw new IOException("发送Arrow数据失败: " + e.getMessage(), e);
+        }
+    }
+
+    private Schema createSchema() {
+        return new Schema(Arrays.asList(
+                new Field("id", FieldType.nullable(Types.MinorType.INT.getType()), null),
+                new Field("name", FieldType.nullable(Types.MinorType.VARCHAR.getType()), null)
+        ));
+    }
+
+    private byte[] generateAndSerializeData(BufferAllocator allocator, Schema schema, ByteArrayOutputStream baos)
+            throws IOException {
+
+        try (VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator);
+             IntVector idVector = (IntVector) root.getVector("id");
+             VarCharVector nameVector = (VarCharVector) root.getVector("name")) {
+
+            generateTestData(root, idVector, nameVector);
+            serializeArrowData(root, baos);
+
+            return baos.toByteArray();
+        }
+    }
+
+    private void generateTestData(VectorSchemaRoot root, IntVector idVector, VarCharVector nameVector) {
+        int rowCount = 5;
+        root.setRowCount(rowCount);
+
+        idVector.allocateNew(rowCount);
+        nameVector.allocateNew(rowCount);
+
+        for (int i = 0; i < rowCount; i++) {
+            idVector.set(i, i + 1);
+            nameVector.set(i, new Text("Name_" + (i + 1)));
+        }
+
+        idVector.setValueCount(rowCount);
+        nameVector.setValueCount(rowCount);
+    }
+
+    private void serializeArrowData(VectorSchemaRoot root, ByteArrayOutputStream baos) throws IOException {
+        try (ArrowStreamWriter writer = new ArrowStreamWriter(root, null, baos)) {
+            writer.start();
+            writer.writeBatch();
+            writer.end();
+        }
+    }
+
+    private String sendHttpRequest(String targetUrl, byte[] arrowDataBytes) throws IOException {
+        RequestBody body = RequestBody.create(arrowDataBytes, ARROW_STREAM);
+        Request request = new Request.Builder()
+                .url(targetUrl)
+                .post(body)
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                logger.error("HTTP请求失败 | URL: {}, 状态码: {}", targetUrl, response.code());
+                throw new IOException("服务器返回错误: " + response.code());
+            }
+            assert response.body() != null;
+            return response.body().string();
         }
     }
 }
