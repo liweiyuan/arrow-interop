@@ -102,7 +102,7 @@ jobs:
     # 因为文件名可能包含版本号，先找到确切的文件名
     - name: Find Java JAR file
       id: find_java_jar # 给这个步骤一个ID，方便后续引用其输出
-      working-directory: ./java-app/target # 在 target 目录下查找
+      working-directory: ./java-sender/target # 在 target 目录下查找
       run: echo "java_jar=$(ls *.jar | grep -v 'original' | head -n 1)" >> "$GITHUB_OUTPUT"
       # 查找 .jar 文件，排除 spring-boot-maven-plugin 生成的 original jar (如果存在)，取第一个找到的文件名
 
@@ -112,7 +112,7 @@ jobs:
       # 使用 echo $! > java-app.pid 保存进程ID
       # 注意：这里需要使用上一步找到的精确JAR文件名
       run: |
-        cd java-app/target
+        cd java-sender/target
         nohup java -jar ${{ steps.find_java_jar.outputs.java_jar }} > ../../java-app.log 2>&1 &
         echo $! > ../../java-app.pid
         echo "Java app started with PID $(cat ../../java-app.pid)"
