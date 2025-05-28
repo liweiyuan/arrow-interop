@@ -113,7 +113,7 @@ jobs:
       # 注意：这里需要使用上一步找到的精确JAR文件名
       run: |
         cd java-sender/target
-        nohup java -jar ${{ steps.find_java_jar.outputs.java_jar }} > ../../java-app.log 2>&1 &
+        nohup java --add-opens=java.base/java.nio=ALL-UNNAMED -jar ${{ steps.find_java_jar.outputs.java_jar }} > ../../java-app.log 2>&1 &
         echo $! > ../../java-app.pid
         echo "Java app started with PID $(cat ../../java-app.pid)"
       # working-directory: ./java-app # 可以不指定，直接使用相对路径到 target
