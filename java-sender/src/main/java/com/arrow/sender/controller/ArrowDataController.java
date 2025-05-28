@@ -11,6 +11,7 @@ public class ArrowDataController {
 
     @Autowired
     private ArrowDataSenderService arrowDataSenderService;
+
     // By default, send to the Go server running on 8080
     @GetMapping("/send-arrow")
     public String sendArrow(@RequestParam(defaultValue = "http://localhost:8080/receive-arrow") String targetUrl) {
@@ -21,5 +22,11 @@ public class ArrowDataController {
             e.printStackTrace();
             return "Failed to send Arrow data: " + e.getMessage();
         }
+    }
+
+
+    @GetMapping("/")
+    public String hello() {
+        return "Hello World";
     }
 }

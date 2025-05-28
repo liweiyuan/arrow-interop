@@ -1,0 +1,221 @@
+
+name: Build Java & Go Applications
+
+# 当代码推送到 main 分支或对 main 分支发起 Pull Request 时触发工作流
+on:
+  push:
+    branches:
+      - main # 根据你的主分支名称进行调整
+  pull_request:
+    branches:
+      - main # 根据你的主分支名称进行调整
+
+# 定义一个构建作业
+jobs:
+  build:
+    # 在最新的 Ubuntu 环境上运行此作业
+    runs-on: ubuntu-latest
+
+    steps:
+    # 步骤 1: 检出代码
+    # 这是所有工作流的必需步骤，用于获取仓库代码
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # --- Java Spring Boot 构建步骤 ---
+
+    # 步骤 2: 设置 Java 环境
+    # 需要一个 JDK 来构建 Java 应用
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17' # 根据你的项目需求选择合适的 Java 版本
+        distribution: 'temurin' # 推荐使用 Temurin (Eclipse Adoptium) 分发版
+
+    # 步骤 3: 缓存 Maven 依赖 (可选但强烈推荐，可以加速构建)
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository # Maven 默认的本地仓库路径
+        key: ${{ runner.os }}-maven-${{ hashFiles('java-sender/pom.xml') }} # 使用 OS 和 pom.xml 的 hash 值作为缓存 key
+        restore-keys: |
+          ${{ runner.os }}-maven- # 如果精确 key 不匹配，尝试恢复 OS-maven 前缀的缓存
+
+    # 步骤 4: 构建 Java Spring Boot 项目
+    # 在 Java 项目目录下执行 Maven 打包命令
+    - name: Build Java Spring Boot project
+      working-directory: ./java-sender # ✨ 重要：替换为你的 Java 项目实际目录名
+      run: mvn clean package -DskipTests # clean package 进行打包，-DskipTests 可以跳过测试，如果你有独立的测试步骤
+
+    # 步骤 5: 上传 Java 构建产物 (JAR 文件)
+    # 将构建生成的 JAR 文件作为工作流的 Artifacts 保存
+    - name: Upload Java artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: java-app-artifact # Artifact 的名称
+        path: java-app/target/*.jar # ✨ 重要：替换为你的 Java 项目打包后 JAR 文件的实际路径模式
+        # 如果你的项目会生成多个 JAR (如 original, executable)，可能需要更精确的路径
+        # path: java-app/target/your-app-name.jar
+
+    # --- Go Gin 构建步骤 ---
+
+    # 步骤 6: 设置 Go 环境
+    # 需要 Go 工具链来构建 Go 应用
+    - name: Set up Go 1.22
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22' # 根据你的项目需求选择合适的 Go 版本
+
+    # 步骤 7: 缓存 Go modules (可选但强烈推荐)
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/go/pkg/mod # Go modules 缓存路径
+          ~/.cache/go-build # Go build 缓存路径
+        key: ${{ runner.os }}-go-${{ hashFiles('go-receiver/go.sum') }} # 使用 OS 和 go.sum 的 hash 值作为缓存 key
+        restore-keys: |
+          ${{ runner.os }}-go- # 如果精确 key 不匹配，尝试恢复 OS-go 前缀的缓存
+
+    # 步骤 8: 构建 Go Gin 项目
+    # 在 Go 项目目录下执行 Go build 命令
+    - name: Build Go Gin project
+      working-directory: ./go-receiver # ✨ 重要：替换为你的 Go 项目实际目录名
+      run: go build -v -o my-go-app ./... # 构建命令，-v 显示详细信息，-o my-go-app 指定输出的可执行文件名，./... 表示构建当前目录及其子目录的所有包
+
+    # 步骤 9: 上传 Go 构建产物 (可执行文件)
+    # 将构建生成的可执行文件作为工作流的 Artifacts 保存
+    - name: Upload Go artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: go-app-artifact # Artifact 的名称
+        path: go-app/my-go-app # ✨ 重要：替换为你的 Go 项目构建后可执行文件的实际路径和文件名（与上一步的 -o 参数一致）
+        # 如果你需要跨平台构建，这里可能需要上传多个文件
+
+    # --- 后续步骤 (可选) ---
+    # 例如，可以在这里添加测试步骤，或者触发部署工作流
+    # ... (前面的 build steps, including upload-artifact for both)
+
+    # --- 运行和测试应用程序步骤 ---
+
+    # 步骤 10: 查找构建好的 Java JAR 文件
+    # 因为文件名可能包含版本号，先找到确切的文件名
+    - name: Find Java JAR file
+      id: find_java_jar # 给这个步骤一个ID，方便后续引用其输出
+      working-directory: ./java-app/target # 在 target 目录下查找
+      run: echo "java_jar=$(ls *.jar | grep -v 'original' | head -n 1)" >> "$GITHUB_OUTPUT"
+      # 查找 .jar 文件，排除 spring-boot-maven-plugin 生成的 original jar (如果存在)，取第一个找到的文件名
+
+    # 步骤 11: 后台启动 Java Spring Boot 应用
+    - name: Run Java Spring Boot app in background
+      # 使用 nohup 和 & 将应用放入后台，并将标准输出/错误重定向
+      # 使用 echo $! > java-app.pid 保存进程ID
+      # 注意：这里需要使用上一步找到的精确JAR文件名
+      run: |
+        cd java-app/target
+        nohup java -jar ${{ steps.find_java_jar.outputs.java_jar }} > ../../java-app.log 2>&1 &
+        echo $! > ../../java-app.pid
+        echo "Java app started with PID $(cat ../../java-app.pid)"
+      # working-directory: ./java-app # 可以不指定，直接使用相对路径到 target
+
+    # 步骤 12: 后台启动 Go Gin 应用
+    - name: Run Go Gin app in background
+      # 在 Go 项目目录下执行编译好的可执行文件，放入后台并保存PID
+      run: |
+        cd go-app
+        nohup ./my-go-app > ../go-app.log 2>&1 &
+        echo $! > ../go-app.pid
+        echo "Go app started with PID $(cat ../go-app.pid)"
+      # working-directory: ./go-app # 可以不指定，直接使用相对路径
+
+    # 步骤 13: 等待 Java 应用启动 (健康检查)
+    # 循环检查端口或健康检查端点，直到应用响应或超时
+    - name: Wait for Java app to start (port 9000)
+      run: |
+        echo "Waiting for Java app to be reachable on port 8080..."
+        timeout=120 # 设置总超时时间 (秒)
+        start_time=$(date +%s)
+        while ! curl -s http://localhost:9000 > /dev/null; do
+          sleep 5 # 每隔5秒检查一次
+          elapsed_time=$(($(date +%s) - start_time))
+          if [ $elapsed_time -ge $timeout ]; then
+            echo "Java app failed to start within $timeout seconds."
+            # 输出日志帮助诊断
+            echo "--- Java App Logs ---"
+            cat java-app.log
+            echo "---------------------"
+            exit 1 # 超时则失败
+          fi
+          echo "Still waiting for Java app... (${elapsed_time}s elapsed)"
+        done
+        echo "Java app is reachable."
+      # 添加 onError: continue 如果你希望即使一个应用启动失败也尝试启动并测试另一个
+
+    # 步骤 14: 等待 Go 应用启动 (健康检查)
+    # 循环检查端口或健康检查端点
+    - name: Wait for Go app to start (port 8080)
+      run: |
+        echo "Waiting for Go app to be reachable on port 8081..."
+        timeout=120 # 设置总超时时间 (秒)
+        start_time=$(date +%s)
+        while ! curl -s http://localhost:8080 > /dev/null; do # ✨ 根据你的Go应用健康检查端点修改 /
+          sleep 5 # 每隔5秒检查一次
+          elapsed_time=$(($(date +%s) - start_time))
+          if [ $elapsed_time -ge $timeout ]; then
+            echo "Go app failed to start within $timeout seconds."
+             # 输出日志帮助诊断
+            echo "--- Go App Logs ---"
+            cat go-app.log
+            echo "-------------------"
+            exit 1 # 超时则失败
+          fi
+           echo "Still waiting for Go app... (${elapsed_time}s elapsed)"
+        done
+        echo "Go app is reachable."
+
+    # 步骤 15: 使用 curl 测试 Java 应用端点
+    - name: Test Java app endpoint
+      run: |
+        echo "Testing Java app endpoint on port 9000..."
+        curl -v http://localhost:9000/ # ✨ 修改为你的 Java 应用实际测试端点
+        # 检查 curl 的退出码，非0表示失败
+        if [ $? -ne 0 ]; then
+          echo "Java app endpoint test failed!"
+          exit 1
+        fi
+        echo "Java app endpoint test successful."
+
+    # 步骤 16: 使用 curl 测试 Go 应用端点
+    - name: Test Go app endpoint
+      run: |
+        echo "Testing Go app endpoint on port 8080..."
+        curl -v http://localhost:8080/ # ✨ 修改为你的 Go 应用实际测试端点
+        # 检查 curl 的退出码
+        if [ $? -ne 0 ]; then
+          echo "Go app endpoint test failed!"
+          exit 1
+        fi
+        echo "Go app endpoint test successful."
+
+    # --- 清理步骤 (可选，但推荐) ---
+
+    # 步骤 17: 停止后台运行的应用程序
+    # 使用之前保存的PID文件来杀死进程
+    # 使用 || true 防止因为进程不存在而导致步骤失败
+    - name: Stop background apps
+      if: always() # 总是执行此步骤，即使前面的测试失败，也尝试清理
+      run: |
+        echo "Stopping background applications..."
+        if [ -f java-app.pid ]; then
+          kill $(cat java-app.pid) || true
+          echo "Java app stopped."
+        fi
+        if [ -f go-app.pid ]; then
+          kill $(cat go-app.pid) || true
+          echo "Go app stopped."
+        fi
+        # 等待进程完全退出，防止僵尸进程，非必需但更健壮
+        sleep 5
+
+
+

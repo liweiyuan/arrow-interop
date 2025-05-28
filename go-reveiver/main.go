@@ -14,6 +14,14 @@ import (
 
 func main() {
 	r := gin.Default()
+	r.GET("/", func(c *gin.Context) {
+		// 在 handler 函数中，使用 c.JSON 发送一个 JSON 响应
+		// http.StatusOK 是标准库定义的 200 状态码
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"message": "Go Gin app is running!",
+		})
+	})
 	// Define the endpoint to receive Arrow data via POST
 	r.POST("/receive-arrow", handleArrowData)
 	// Run the server on port 8080
