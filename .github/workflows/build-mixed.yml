@@ -81,7 +81,7 @@ jobs:
     # 在 Go 项目目录下执行 Go build 命令
     - name: Build Go Gin project
       working-directory: ./go-receiver # ✨ 重要：替换为你的 Go 项目实际目录名
-      run: go build -v -o my-go-app ./... # 构建命令，-v 显示详细信息，-o my-go-app 指定输出的可执行文件名，./... 表示构建当前目录及其子目录的所有包
+      run: go build -v -o my-go-app . # 构建命令，-v 显示详细信息，-o my-go-app 指定输出的可执行文件名，./... 表示构建当前目录及其子目录的所有包
 
     # 步骤 9: 上传 Go 构建产物 (可执行文件)
     # 将构建生成的可执行文件作为工作流的 Artifacts 保存
