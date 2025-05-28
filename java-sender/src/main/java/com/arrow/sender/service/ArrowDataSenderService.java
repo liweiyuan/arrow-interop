@@ -1,5 +1,6 @@
 package com.arrow.sender.service;
 
+import jakarta.annotation.PreDestroy;
 import okhttp3.*;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
@@ -35,16 +36,24 @@ public class ArrowDataSenderService {
             .build();
     private static final MediaType ARROW_STREAM = MediaType.get("application/vnd.apache.arrow.stream");
 
+    // 新增成员变量（设置合理的内存上限）
+    private final BufferAllocator rootAllocator = new RootAllocator(256L * 1024 * 1024); // 256MB 内存限制
 
-    // ... 保持已有的 httpClient 和 ARROW_STREAM 声明 ...
+    // 新增销毁方法
+    @PreDestroy
+    public void cleanup() {
+        if (rootAllocator != null) {
+            rootAllocator.close();
+            logger.info("BufferAllocator 已释放");
+        }
+    }
 
     public String sendArrowData(String targetUrl) throws IOException {
-        try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);
+        try (BufferAllocator requestAllocator = rootAllocator.newChildAllocator("request", 0, 64 * 1024 * 1024);
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 
             Schema schema = createSchema();
-            byte[] arrowDataBytes = generateAndSerializeData(allocator, schema, baos);
-
+            byte[] arrowDataBytes = generateAndSerializeData(requestAllocator, schema, baos);
             return sendHttpRequest(targetUrl, arrowDataBytes);
 
         } catch (Exception e) {
