@@ -73,14 +73,14 @@ jobs:
         path: |
           ~/go/pkg/mod # Go modules 缓存路径
           ~/.cache/go-build # Go build 缓存路径
-        key: ${{ runner.os }}-go-${{ hashFiles('go-receiver/go.sum') }} # 使用 OS 和 go.sum 的 hash 值作为缓存 key
+        key: ${{ runner.os }}-go-${{ hashFiles('go-reveiver/go.sum') }} # 使用 OS 和 go.sum 的 hash 值作为缓存 key
         restore-keys: |
           ${{ runner.os }}-go- # 如果精确 key 不匹配，尝试恢复 OS-go 前缀的缓存
 
     # 步骤 8: 构建 Go Gin 项目
     # 在 Go 项目目录下执行 Go build 命令
     - name: Build Go Gin project
-      working-directory: ./go-receiver # ✨ 重要：替换为你的 Go 项目实际目录名
+      working-directory: ./go-reveiver # ✨ 重要：替换为你的 Go 项目实际目录名
       run: go build -v -o my-go-app . # 构建命令，-v 显示详细信息，-o my-go-app 指定输出的可执行文件名，./... 表示构建当前目录及其子目录的所有包
 
     # 步骤 9: 上传 Go 构建产物 (可执行文件)
