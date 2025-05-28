@@ -108,7 +108,8 @@ func processRecordBatch(record arrow.Record) {
 
 // Gin handler function to process incoming Arrow data
 func handleArrowData(c *gin.Context) {
-	log.Println("Received POST request to /receive-arrow")
+	contentType := c.Request.Header.Get("Content-Type")
+	log.Println("Received request with Content-Type:", contentType)
 
 	// 读取和准备数据
 	reader, err := prepareArrowReader(c)
