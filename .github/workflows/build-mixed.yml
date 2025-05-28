@@ -197,6 +197,18 @@ jobs:
         fi
         echo "Go app endpoint test successful."
 
+    # 步骤 16: 使用 curl 测试 Go 应用端点
+    - name: Test Java call Go
+      run: |
+        echo "Testing Java 调用 Go "
+        curl -v http://localhost:9000/send-arrow # ✨ 修改为你的 Go 应用实际测试端点
+        # 检查 curl 的退出码
+        if [ $? -ne 0 ]; then
+          echo "Java call Go failed!"
+          exit 1
+        fi
+        echo "Java call Go successful."
+
     # --- 清理步骤 (可选，但推荐) ---
 
     # 步骤 17: 停止后台运行的应用程序
